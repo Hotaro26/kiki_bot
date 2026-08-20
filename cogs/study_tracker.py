@@ -130,47 +130,63 @@ class StudyTracker(commands.Cog):
         # Re-sort and take top 10
         sorted_lb = sorted(lb_dict.items(), key=lambda x: x[1], reverse=True)[:10]
         
-        embed = discord.Embed(
-            title=f"🏆 {period.capitalize()} Leaderboard",
-            color=0xf1c40f
-        )
-        
         if not sorted_lb:
-            embed.description = "*No study sessions found for this period yet!*"
-        else:
-            top_3 = []
-            runner_ups = []
+            empty_embed = discord.Embed(
+                title=f"🏆 {period.capitalize()} Leaderboard",
+                description="*No study sessions found for this period yet!*",
+                color=0xf1c40f
+            )
+            await ctx.reply(embed=empty_embed, mention_author=False)
+            return
+
+        embeds = []
+        colors = [0xffd700, 0xc0c0c0, 0xcd7f32] # Gold, Silver, Bronze
+        medals = ["🥇", "🥈", "🥉"]
+        
+        # Create an embed for each of the Top 3
+        for i in range(min(3, len(sorted_lb))):
+            user_id, hours = sorted_lb[i]
             
-            for i, (user_id, hours) in enumerate(sorted_lb, start=1):
+            total_sec = int(hours * 3600)
+            h = total_sec // 3600
+            m = (total_sec % 3600) // 60
+            time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
+            
+            member = ctx.guild.get_member(user_id) if ctx.guild else None
+            
+            embed = discord.Embed(color=colors[i])
+            if i == 0:
+                embed.title = f"🏆 {period.capitalize()} Leaderboard\n✨ **Top 3 Scholars** ✨"
+                
+            embed.description = f"{medals[i]} <@{user_id}>\n ↳ ⌛ **{time_str}**"
+            
+            if member and member.avatar:
+                embed.set_thumbnail(url=member.avatar.url)
+                
+            embeds.append(embed)
+
+        # Create a final embed for runner ups
+        if len(sorted_lb) > 3:
+            runner_ups = []
+            for i in range(3, len(sorted_lb)):
+                user_id, hours = sorted_lb[i]
+                
                 total_sec = int(hours * 3600)
                 h = total_sec // 3600
                 m = (total_sec % 3600) // 60
                 time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
                 
-                member = ctx.guild.get_member(user_id) if ctx.guild else None
+                runner_ups.append(f"`#{i+1:02}` <@{user_id}> ─ {time_str}")
                 
-                if i == 1:
-                    if member and member.avatar:
-                        embed.set_thumbnail(url=member.avatar.url)
-                    top_3.append(f"🥇 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
-                elif i == 2:
-                    top_3.append(f"🥈 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
-                elif i == 3:
-                    top_3.append(f"🥉 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
-                else:
-                    runner_ups.append(f"`#{i:02}` <@{user_id}> ─ {time_str}")
+            runner_embed = discord.Embed(color=0x2ecc71, description="━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n" + "\n".join(runner_ups))
+            runner_embed.set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
+            embeds.append(runner_embed)
+        else:
+            # If no runner ups, put footer on the last top 3 embed
+            if embeds:
+                embeds[-1].set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
 
-            desc = "✨ **Top 3 Scholars** ✨\n━━━━━━━━━━━━━━━━━━━━\n"
-            desc += "\n".join(top_3)
-            
-            if runner_ups:
-                desc += "\n━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n"
-                desc += "\n".join(runner_ups)
-                
-            embed.description = desc
-            embed.set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
-
-        await ctx.reply(embed=embed, mention_author=False)
+        await ctx.reply(embeds=embeds, mention_author=False)
 
     @discord.app_commands.command(name='timezone', description='Set your local timezone')
     async def set_timezone(self, interaction: discord.Interaction, timezone: str):
