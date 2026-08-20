@@ -16,7 +16,7 @@ async def setup_db():
         return
 
     # Create a connection pool to Supabase
-    pool = await asyncpg.create_pool(DB_URL)
+    pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=3)
     
     async with pool.acquire() as conn:
         # Create users table
