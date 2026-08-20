@@ -4,10 +4,12 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import logging
+import database
+import keep_alive
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('kiki_bot')
+logger = logging.getLogger('ace_bot')
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +27,10 @@ bot = commands.Bot(command_prefix=['!', '-'], intents=intents)
 async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     logger.info('------')
+    
+    # Start the web server to keep Render happy
+    await keep_alive.start_web_server()
+    
     try:
         synced = await bot.tree.sync()
         logger.info(f"Synced {len(synced)} command(s)")
