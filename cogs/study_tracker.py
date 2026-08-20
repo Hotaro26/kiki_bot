@@ -1,7 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+import datetime as dt
+import os
 import pytz
 import database
 
@@ -11,7 +13,11 @@ class StudyTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # Maps user_id to datetime when they joined VC
-        self.active_sessions = {} 
+        self.active_sessions = {}
+        
+        # Hardcoded leaderboard channel from user
+        self.leaderboard_channel_id = 1539850416387264542
+        self.daily_announcement.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -181,9 +187,6 @@ class StudyTracker(commands.Cog):
                 runner_ups.append(f"`#{i+1:02}` <@{user_id}> ─ {time_str}")
                 
             runner_embed = discord.Embed(color=0x2ecc71, description="━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n" + "\n".join(runner_ups) + f"\n\n{spacer}")
-            runner_embed.set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
-            embeds.append(runner_embed)
-        else:
             # If no runner ups, put footer on the last top 3 embed
             if embeds:
                 embeds[-1].set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
@@ -207,3 +210,69 @@ class StudyTracker(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(StudyTracker(bot))
+
+    @tasks.loop(time=dt.time(hour=0, minute=0, tzinfo=timezone.utc))
+    async def daily_announcement(self):
+        """Announce daily/weekly winners at Midnight UTC."""
+        channel = self.bot.get_channel(self.leaderboard_channel_id)
+        if not channel:
+            return
+            
+        today = datetime.now(timezone.utc)
+        is_monday = (today.weekday() == 0) # 0 is Monday
+        
+        # Post Daily Winner for YESTERDAY (offset_days=1)
+        await self._post_announcement(channel, 'daily', 1)
+        
+        if is_monday:
+            # Post Weekly Winner for LAST WEEK (offset_days=7)
+            await self._post_announcement(channel, 'weekly', 7)
+            
+    async def _post_announcement(self, channel, period: str, offset_days: int):
+        db_data = await database.get_leaderboard(period, offset_days=offset_days)
+        if not db_data:
+            return # Nobody studied
+            
+        embeds = []
+        colors = [0xffd700, 0xc0c0c0, 0xcd7f32]
+        medals = ["🥇", "🥈", "🥉"]
+        spacer = "⠀" * 45
+        
+        for i in range(min(3, len(db_data))):
+            user_id, hours = db_data[i]
+            total_sec = int(hours * 3600)
+            h = total_sec // 3600
+            m = (total_sec % 3600) // 60
+            time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
+            
+            member = channel.guild.get_member(user_id)
+            if not member:
+                try:
+                    member = await self.bot.fetch_user(user_id)
+                except:
+                    pass
+            
+            embed = discord.Embed(color=colors[i])
+            if i == 0:
+                title_prefix = "🌟 Yesterday's" if period == 'daily' else "👑 Last Week's"
+                embed.title = f"📢 {title_prefix} {period.capitalize()} Winners!\n✨ **Top 3 Scholars** ✨"
+                
+            embed.description = f"{medals[i]} <@{user_id}>\n ↳ ⌛ **{time_str}**\n\n{spacer}"
+            if member and getattr(member, 'avatar', None):
+                embed.set_thumbnail(url=member.avatar.url)
+            embeds.append(embed)
+            
+        if len(db_data) > 3:
+            runner_ups = []
+            for i in range(3, len(db_data)):
+                user_id, hours = db_data[i]
+                total_sec = int(hours * 3600)
+                h = total_sec // 3600
+                m = (total_sec % 3600) // 60
+                time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
+                runner_ups.append(f"`#{i+1:02}` <@{user_id}> ─ {time_str}")
+                
+            runner_embed = discord.Embed(color=0x2ecc71, description="━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n" + "\n".join(runner_ups) + f"\n\n{spacer}")
+            embeds.append(runner_embed)
+            
+        await channel.send(f"Attention everyone! The {period} study results are in! 🎉", embeds=embeds)

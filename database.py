@@ -104,8 +104,8 @@ async def set_user_timezone(user_id: int, timezone: str):
             DO UPDATE SET timezone = $2
         ''', user_id, timezone)
 
-async def get_leaderboard(period: str, limit: int = 10):
-    """Get top users by study hours for a specific period (daily, weekly, alltime)."""
+async def get_leaderboard(period: str, limit: int = 10, offset_days: int = 0):
+    \"\"\"Get top users by study hours for a specific period (daily, weekly, alltime).\"\"\"
     if not pool: return []
     async with pool.acquire() as conn:
         if period == 'alltime':
@@ -113,10 +113,10 @@ async def get_leaderboard(period: str, limit: int = 10):
             return [(row['user_id'], row['total_hours']) for row in rows]
         
         elif period == 'weekly':
-            query = '''
+            query = f'''
                 SELECT user_id, SUM(duration_hours) as period_hours
                 FROM study_sessions
-                WHERE timestamp >= NOW() - INTERVAL '7 days'
+                WHERE date_trunc('week', timestamp AT TIME ZONE 'UTC') = date_trunc('week', (NOW() - INTERVAL '{offset_days} days') AT TIME ZONE 'UTC')
                 GROUP BY user_id
                 ORDER BY period_hours DESC
                 LIMIT $1
@@ -125,10 +125,10 @@ async def get_leaderboard(period: str, limit: int = 10):
             return [(row['user_id'], row['period_hours']) for row in rows]
                 
         elif period == 'daily':
-            query = '''
+            query = f'''
                 SELECT user_id, SUM(duration_hours) as period_hours
                 FROM study_sessions
-                WHERE timestamp >= NOW() - INTERVAL '1 day'
+                WHERE date(timestamp AT TIME ZONE 'UTC') = date((NOW() - INTERVAL '{offset_days} days') AT TIME ZONE 'UTC')
                 GROUP BY user_id
                 ORDER BY period_hours DESC
                 LIMIT $1
