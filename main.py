@@ -28,6 +28,9 @@ async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     logger.info('------')
     
+    # Set online status indicator
+    await bot.change_presence(status=discord.Status.online, activity=discord.Activity(type=discord.ActivityType.watching, name="you study! ☕"))
+    
     try:
         synced = await bot.tree.sync()
         logger.info(f"Synced {len(synced)} command(s)")
