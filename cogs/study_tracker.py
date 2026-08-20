@@ -62,10 +62,9 @@ class StudyTracker(commands.Cog):
                 #    await member.send(f"You studied for {hours_studied:.2f} hours!")
                 # except: pass
 
-    @commands.command(name='p')
-    async def profile(self, ctx, member: discord.Member = None):
-        """Show study profile embed for yourself or another user."""
-        target_member = member or ctx.author
+    @discord.app_commands.command(name='profile', description="Show study profile for yourself or another user")
+    async def profile(self, interaction: discord.Interaction, member: discord.Member = None):
+        target_member = member or interaction.user
         user_data = await database.get_user_data(target_member.id)
         
         total_hours_float = user_data['total_hours'] if user_data else 0.0
@@ -112,15 +111,15 @@ class StudyTracker(commands.Cog):
         
         embed.set_footer(text=f"cozy study café ☕ ‧₊˚ 💻 ｡°.*  | {timezone}")
         
-        await ctx.reply(embed=embed, mention_author=False)
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name='lb', aliases=['leaderboard'])
-    async def leaderboard(self, ctx, period: str = 'weekly'):
-        """Show the study leaderboard. Usage: -lb daily, -lb weekly, -lb alltime"""
-        period = period.lower()
-        if period not in ['daily', 'weekly', 'alltime']:
-            await ctx.reply("❌ Invalid period! Use `daily`, `weekly`, or `alltime`.", mention_author=False)
-            return
+    @discord.app_commands.command(name='leaderboard', description="Show the study leaderboard")
+    @discord.app_commands.choices(period=[
+        discord.app_commands.Choice(name="Daily", value="daily"),
+        discord.app_commands.Choice(name="Weekly", value="weekly"),
+        discord.app_commands.Choice(name="All-Time", value="alltime")
+    ])
+    async def leaderboard(self, interaction: discord.Interaction, period: str = 'weekly'):
 
         db_data = await database.get_leaderboard(period)
         
@@ -142,7 +141,7 @@ class StudyTracker(commands.Cog):
                 description="*No study sessions found for this period yet!*",
                 color=0xf1c40f
             )
-            await ctx.reply(embed=empty_embed, mention_author=False)
+            await interaction.response.send_message(embed=empty_embed)
             return
 
         embeds = []
@@ -159,7 +158,7 @@ class StudyTracker(commands.Cog):
             m = (total_sec % 3600) // 60
             time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
             
-            member = ctx.guild.get_member(user_id) if ctx.guild else None
+            member = interaction.guild.get_member(user_id) if interaction.guild else None
             
             embed = discord.Embed(color=colors[i])
             if i == 0:
@@ -191,7 +190,7 @@ class StudyTracker(commands.Cog):
             if embeds:
                 embeds[-1].set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
 
-        await ctx.reply(embeds=embeds, mention_author=False)
+        await interaction.response.send_message(embeds=embeds)
 
     @discord.app_commands.command(name='timezone', description='Set your local timezone')
     async def set_timezone(self, interaction: discord.Interaction, timezone: str):
