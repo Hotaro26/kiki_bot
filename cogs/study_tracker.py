@@ -144,6 +144,7 @@ class StudyTracker(commands.Cog):
         medals = ["🥇", "🥈", "🥉"]
         
         # Create an embed for each of the Top 3
+        spacer = "⠀" * 45 # 45 Braille spaces to force uniform embed width
         for i in range(min(3, len(sorted_lb))):
             user_id, hours = sorted_lb[i]
             
@@ -158,7 +159,8 @@ class StudyTracker(commands.Cog):
             if i == 0:
                 embed.title = f"🏆 {period.capitalize()} Leaderboard\n✨ **Top 3 Scholars** ✨"
                 
-            embed.description = f"{medals[i]} <@{user_id}>\n ↳ ⌛ **{time_str}**"
+            # Add spacer at the end of description to stretch width
+            embed.description = f"{medals[i]} <@{user_id}>\n ↳ ⌛ **{time_str}**\n\n{spacer}"
             
             if member and member.avatar:
                 embed.set_thumbnail(url=member.avatar.url)
@@ -178,7 +180,7 @@ class StudyTracker(commands.Cog):
                 
                 runner_ups.append(f"`#{i+1:02}` <@{user_id}> ─ {time_str}")
                 
-            runner_embed = discord.Embed(color=0x2ecc71, description="━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n" + "\n".join(runner_ups))
+            runner_embed = discord.Embed(color=0x2ecc71, description="━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n" + "\n".join(runner_ups) + f"\n\n{spacer}")
             runner_embed.set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
             embeds.append(runner_embed)
         else:
