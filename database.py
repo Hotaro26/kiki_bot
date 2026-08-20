@@ -105,7 +105,7 @@ async def set_user_timezone(user_id: int, timezone: str):
         ''', user_id, timezone)
 
 async def get_leaderboard(period: str, limit: int = 10, offset_days: int = 0):
-    \"\"\"Get top users by study hours for a specific period (daily, weekly, alltime).\"\"\"
+    """Get top users by study hours for a specific period (daily, weekly, alltime)."""
     if not pool: return []
     async with pool.acquire() as conn:
         if period == 'alltime':
