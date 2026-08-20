@@ -28,9 +28,6 @@ async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     logger.info('------')
     
-    # Start the web server to keep Render happy
-    await keep_alive.start_web_server()
-    
     try:
         synced = await bot.tree.sync()
         logger.info(f"Synced {len(synced)} command(s)")
@@ -46,9 +43,10 @@ async def load_cogs():
             except Exception as e:
                 logger.error(f'Failed to load cog {filename}: {e}')
 
-import database
-
 async def main():
+    # Start the web server FIRST to satisfy Render's health checks instantly
+    await keep_alive.start_web_server()
+    
     async with bot:
         await database.setup_db()
         await load_cogs()
