@@ -207,9 +207,6 @@ class StudyTracker(commands.Cog):
         matches = [tz for tz in pytz.common_timezones if current.lower() in tz.lower()]
         return [discord.app_commands.Choice(name=match, value=match) for match in matches[:25]]
 
-async def setup(bot):
-    await bot.add_cog(StudyTracker(bot))
-
     @tasks.loop(time=dt.time(hour=0, minute=0, tzinfo=timezone.utc))
     async def daily_announcement(self):
         """Announce daily/weekly winners at Midnight UTC."""
@@ -275,3 +272,6 @@ async def setup(bot):
             embeds.append(runner_embed)
             
         await channel.send(f"Attention everyone! The {period} study results are in! 🎉", embeds=embeds)
+async def setup(bot):
+    await bot.add_cog(StudyTracker(bot))
+
