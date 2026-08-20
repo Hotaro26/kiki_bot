@@ -1,0 +1,191 @@
+import discord
+from discord.ext import commands
+import logging
+from datetime import datetime
+import pytz
+import database
+
+logger = logging.getLogger('kiki_bot.study_tracker')
+
+class StudyTracker(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # Maps user_id to datetime when they joined VC
+        self.active_sessions = {} 
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # When bot restarts, find everyone already in a voice channel and start tracking them
+        count = 0
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    if not member.bot and member.id not in self.active_sessions:
+                        self.active_sessions[member.id] = datetime.now()
+                        count += 1
+        if count > 0:
+            logger.info(f"Recovered tracking for {count} users already in VC.")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if member.bot:
+            return
+            
+        user_id = member.id
+
+        # User joined a voice channel OR switched channels but wasn't being tracked
+        if after.channel is not None and user_id not in self.active_sessions:
+            self.active_sessions[user_id] = datetime.now()
+            logger.info(f"{member.name} joined VC or was recovered. Started tracking.")
+
+        # User completely left all voice channels
+        elif before.channel is not None and after.channel is None:
+            if user_id in self.active_sessions:
+                join_time = self.active_sessions.pop(user_id)
+                leave_time = datetime.now()
+                
+                duration = leave_time - join_time
+                hours_studied = duration.total_seconds() / 3600.0
+                
+                # Save to database
+                await database.add_study_time(user_id, hours_studied)
+                logger.info(f"{member.name} left VC. Logged {hours_studied:.4f} hours.")
+                
+                # Optionally, we can send a DM or a message in a specific channel
+                # try:
+                #    await member.send(f"You studied for {hours_studied:.2f} hours!")
+                # except: pass
+
+    @commands.command(name='p')
+    async def profile(self, ctx, member: discord.Member = None):
+        """Show study profile embed for yourself or another user."""
+        target_member = member or ctx.author
+        user_data = await database.get_user_data(target_member.id)
+        
+        total_hours_float = user_data['total_hours'] if user_data else 0.0
+        timezone = user_data['timezone'] if user_data and 'timezone' in user_data else 'Asia/Kolkata'
+        
+        # Get actual daily and monthly stats from database
+        today_hours, month_hours = await database.get_study_stats(target_member.id, timezone)
+        
+        # Add live session time if currently in VC
+        if target_member.id in self.active_sessions:
+            join_time = self.active_sessions[target_member.id]
+            live_duration_hours = (datetime.now() - join_time).total_seconds() / 3600.0
+            
+            total_hours_float += live_duration_hours
+            today_hours += live_duration_hours
+            month_hours += live_duration_hours
+        
+        def format_time(hours_float):
+            total_sec = int(hours_float * 3600)
+            h = total_sec // 3600
+            m = (total_sec % 3600) // 60
+            s = total_sec % 60
+            if h > 0 or m > 0:
+                return f"{h}h {m}m"
+            return f"{s}s"
+
+        time_str = format_time(total_hours_float)
+        today_str = format_time(today_hours)
+        month_str = format_time(month_hours)
+
+        embed = discord.Embed(
+            title=f"Banked {time_str}",
+            description=f"{target_member.name}",
+            color=0x2ecc71 # Green color matching the sidebar
+        )
+        
+        if target_member.avatar:
+            embed.set_thumbnail(url=target_member.avatar.url)
+            
+        embed.add_field(name="Today", value=today_str, inline=False)
+        embed.add_field(name="This month", value=month_str, inline=False)
+        embed.add_field(name="All time", value=time_str, inline=False)
+        embed.add_field(name="Resets", value="`in 7 days`", inline=False)
+        
+        embed.set_footer(text=f"cozy study café ☕ ‧₊˚ 💻 ｡°.*  | {timezone}")
+        
+        await ctx.reply(embed=embed, mention_author=False)
+
+    @commands.command(name='lb', aliases=['leaderboard'])
+    async def leaderboard(self, ctx, period: str = 'weekly'):
+        """Show the study leaderboard. Usage: -lb daily, -lb weekly, -lb alltime"""
+        period = period.lower()
+        if period not in ['daily', 'weekly', 'alltime']:
+            await ctx.reply("❌ Invalid period! Use `daily`, `weekly`, or `alltime`.", mention_author=False)
+            return
+
+        db_data = await database.get_leaderboard(period)
+        
+        # Convert to dictionary to add live times
+        lb_dict = {user_id: hours for user_id, hours in db_data}
+        
+        # Add live session times
+        now = datetime.now()
+        for uid, join_time in self.active_sessions.items():
+            live_duration = (now - join_time).total_seconds() / 3600.0
+            lb_dict[uid] = lb_dict.get(uid, 0.0) + live_duration
+            
+        # Re-sort and take top 10
+        sorted_lb = sorted(lb_dict.items(), key=lambda x: x[1], reverse=True)[:10]
+        
+        embed = discord.Embed(
+            title=f"🏆 {period.capitalize()} Leaderboard",
+            color=0xf1c40f
+        )
+        
+        if not sorted_lb:
+            embed.description = "*No study sessions found for this period yet!*"
+        else:
+            top_3 = []
+            runner_ups = []
+            
+            for i, (user_id, hours) in enumerate(sorted_lb, start=1):
+                total_sec = int(hours * 3600)
+                h = total_sec // 3600
+                m = (total_sec % 3600) // 60
+                time_str = f"{h}h {m}m" if h > 0 or m > 0 else f"{total_sec}s"
+                
+                member = ctx.guild.get_member(user_id) if ctx.guild else None
+                
+                if i == 1:
+                    if member and member.avatar:
+                        embed.set_thumbnail(url=member.avatar.url)
+                    top_3.append(f"🥇 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
+                elif i == 2:
+                    top_3.append(f"🥈 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
+                elif i == 3:
+                    top_3.append(f"🥉 <@{user_id}>\n ↳ ⌛ **{time_str}**\n")
+                else:
+                    runner_ups.append(f"`#{i:02}` <@{user_id}> ─ {time_str}")
+
+            desc = "✨ **Top 3 Scholars** ✨\n━━━━━━━━━━━━━━━━━━━━\n"
+            desc += "\n".join(top_3)
+            
+            if runner_ups:
+                desc += "\n━━━━━━━━━━━━━━━━━━━━\n**Runner Ups**\n"
+                desc += "\n".join(runner_ups)
+                
+            embed.description = desc
+            embed.set_footer(text="cozy study café ☕ ‧₊˚ 💻 ｡°.*")
+
+        await ctx.reply(embed=embed, mention_author=False)
+
+    @discord.app_commands.command(name='timezone', description='Set your local timezone')
+    async def set_timezone(self, interaction: discord.Interaction, timezone: str):
+        if timezone not in pytz.all_timezones:
+            await interaction.response.send_message("❌ Invalid timezone selected.", ephemeral=True)
+            return
+            
+        await database.set_user_timezone(interaction.user.id, timezone)
+        await interaction.response.send_message(f"✅ Your timezone has been updated to **{timezone}**!", ephemeral=True)
+
+    @set_timezone.autocomplete('timezone')
+    async def timezone_autocomplete(self, interaction: discord.Interaction, current: str):
+        # Provide up to 25 suggestions based on user input
+        matches = [tz for tz in pytz.common_timezones if current.lower() in tz.lower()]
+        return [discord.app_commands.Choice(name=match, value=match) for match in matches[:25]]
+
+async def setup(bot):
+    await bot.add_cog(StudyTracker(bot))
